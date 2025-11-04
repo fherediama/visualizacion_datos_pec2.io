@@ -1,0 +1,145 @@
+---
+title: 'PEC2: Análisis de Técnicas de Visualización'
+author: "Francisco Heredia Mañas"
+date: "Noviembre 2025"
+output:
+  html_document:
+    toc: true
+    toc_depth: '2'
+    df_print: paged
+institute: Universitat Oberta de Catalunya
+header-includes:
+- \renewcommand{\contentsname}{Contenido}
+- \usepackage{fancyhdr}
+- \usepackage{tabularx}
+- \pagestyle{fancy}
+- "\\fancyhead[L]{M2.890 - Análisis estadístico}"
+- "\\fancyhead[R]{Máster de Ciencia de Datos - UOC}"
+- \renewcommand{\headrulewidth}{0.4pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load_libraries, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(networkD3)
+library(tidyverse)
+library(scales)
+library(plotly)
+```
+
+\newpage
+
+```{r dataset}
+# Dataset
+df_vgsales <- read.csv("../data/dataset_vgsales.csv")
+```
+
+```{r variables}
+# Columna de ventas globales
+df_vgsales <- df_vgsales %>% 
+  mutate(Global_Sales = NA_Sales + EU_Sales + JP_Sales + Other_Sales)
+# Columna Company agrupando las plataformas
+df_vgsales$Company <- dplyr::case_when(
+  df_vgsales$Platform %in% c("PS", "PS2", "PS3", "PS4", "PSP", "PSV") ~ "Sony",
+  df_vgsales$Platform %in% c("NES", "SNES", "N64", "GC", "Wii", "WiiU", "Switch",
+                              "GB", "GBA", "DS", "3DS") ~ "Nintendo",
+  df_vgsales$Platform %in% c("XB", "X360", "XOne") ~ "Xbox",
+  df_vgsales$Platform %in% c("GEN", "DC", "SAT", "SCD", "GG") ~ "Sega",
+  df_vgsales$Platform %in% c("PC") ~ "PC",
+  TRUE ~ "Other"
+)
+knitr::kable(dplyr::slice_head(df_vgsales, n = 5))
+```
+
+```{r Sankey}
+# Visualizacion Sankey
+sankey_data <- df_vgsales %>%
+  group_by(Genre, Company) %>%
+  summarise(Value = sum(Global_Sales), .groups = "drop")
+
+nodes <- data.frame(name = unique(c(sankey_data$Genre, sankey_data$Company)))
+
+sankey_data$IDsource <- match(sankey_data$Genre, nodes$name) - 1
+sankey_data$IDtarget <- match(sankey_data$Company, nodes$name) - 1
+
+p_sankey <- sankeyNetwork(
+    Links = sankey_data, 
+    Nodes = nodes,
+    Source = "IDsource", 
+    Target = "IDtarget", 
+    Value = "Value", 
+    NodeID = "name",
+    sinksRight = FALSE
+)
+p_sankey
+
+saveNetwork(
+  p_sankey,
+  "../docs/sankey_visualizacion.html"
+)
+```
+
+```{r Boxplot}
+# Visualización Boxplot
+boxplot_data <- df_vgsales %>%
+  filter(Global_Sales > 0) 
+p_boxplot <- ggplot(boxplot_data, aes(x = reorder(Company, Global_Sales, FUN = median), 
+                                y = Global_Sales, 
+                                fill = Company)) +
+  geom_boxplot(alpha = 1, outlier.shape = 1, show.legend = FALSE) +
+  labs(
+    title = "Distribución de Ventas Globales por Compañía",
+    x = "Compañía",
+    y = "Ventas Globales (millones)"
+  ) +
+  theme_minimal() +
+  scale_y_continuous(trans = 'log10', 
+                     labels = scales::comma,
+                     breaks = c(0.1, 0.5, 1, 5, 10))
+
+p_boxplot
+
+p_boxplot_interactivo <- ggplotly(p_boxplot)
+p_boxplot_interactivo <- config(
+  p_boxplot_interactivo,
+  staticPlot = TRUE
+)
+htmlwidgets::saveWidget(p_boxplot_interactivo, "../docs/boxplot_visualizacion.html")
+```
+
+```{r Convex_hull}
+# Visualizacion Convex Hull
+convex_hull_data <- df_vgsales %>%
+  group_by(Company) %>%
+  slice(chull(NA_Sales, EU_Sales)) %>%
+  ungroup()
+
+p_convex_hull <- ggplot(df_vgsales, aes(x = NA_Sales, y = EU_Sales, color = Company)) +
+  geom_point(alpha = 0.5, size = 1.5) +
+  geom_polygon(data = convex_hull_data, 
+               aes(fill = Company, group = Company), 
+               alpha = 0.2, 
+               show.legend = FALSE) +
+  labs(
+    title = "Comparación de Ventas NA vs. EU por Compañía",
+    x = "Ventas en Norteamérica (millones)",
+    y = "Ventas en Europa (millones)",
+    color = "Compañía"
+  ) + 
+  theme_minimal() +
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma)
+
+p_convex_hull
+
+p_convex_hull_interactivo <- ggplotly(p_convex_hull)
+p_convex_hull_interactivo <- config(
+  p_convex_hull_interactivo,
+  staticPlot = TRUE
+)
+htmlwidgets::saveWidget(p_convex_hull_interactivo, "../docs/convex_hull_visualizacion.html")
+```
